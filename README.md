@@ -1,6 +1,6 @@
 # Unofficial CK2 Engine Patch
 
-Developed by **London Hargrove**. An executable-level patch project for Crusader Kings II. This version implements achievement eligibility changes for a specific Windows x86-64 build of CK2 3.3.5.1. Engine fixes, performance work, and native Linux and macOS support are future work.
+Developed by **London Hargrove**. An executable-level patch project for Crusader Kings II. This version adds a pause-menu Load Save action and changes achievement eligibility for a specific Windows x86-64 build of CK2 3.3.5.1. Engine fixes, performance work, and native Linux and macOS support are future work.
 
 ## Platform support
 
@@ -13,7 +13,7 @@ Developed by **London Hargrove**. An executable-level patch project for Crusader
 
 ## Build and run
 
-Requires Python 3.9+ and a matching local Steam installation. The installer checks the SHA-256 hashes of the executable and stock achievement script. It builds an independent copy and fails closed on other builds. Use a new destination outside the Steam installation.
+Requires Python 3.9+ and a matching local Steam installation. The installer checks the SHA-256 hashes of the executable, stock achievement script, and pause-menu layout. It builds an independent copy and fails closed on other builds. Use a new destination outside the Steam installation.
 
 ```sh
 python3 patch_ck2.py "/absolute/path/to/Crusader Kings II" "/absolute/path/to/CK2-patched"
@@ -26,6 +26,49 @@ On Linux with Proton, close CK2, save any previous launch options, and set these
 ```
 
 On Windows, run the installer with `py -3 patch_ck2.py "C:\path\to\Crusader Kings II" "C:\path\to\CK2-patched"`. For an initial test, open Steam, switch to the copy's directory, and run the copied `CK2game.exe` from there. Confirm CK2 reports Steam active before testing unlocks. Windows launch via the copied executable is a test procedure. Linux's Bash launcher applies only to Proton. To revert, launch the original, restoring prior Steam launch options on Linux.
+
+## Load Save from the pause menu
+
+**Load Save** appears directly below **Save Game** in the pause menu. It opens
+the stock save list over the campaign map. Select a local save and click **Load**
+to replace the current campaign, or click **Back** to keep playing. Loading
+discards unsaved progress. The picker uses the selected row and ignores edits
+to the filename field. Delete and tab actions are disabled while loading.
+
+The earlier implementation called the main-menu **Load Game** action after
+campaign teardown. That action opened a browser and expected a player to
+finish character setup. The patch now hands the selected filename to CK2's
+stock startup-save loader at the end of engine initialization. On a successful
+load, the picker is followed by CK2's loading screen and then gameplay. CK2
+still validates and deserializes the file and restores the saved player.
+
+In an offline single-player Proton 10.0-4 test, a compressed save created on
+27 September 1066 was reloaded after advancing to 6 October. CK2 restored the
+saved date, Duke William of Normandy, the map, and the saved resource totals.
+The recorded transition showed no main menu or character selection screen.
+A second test loaded an uncompressed save while playing as a different ruler.
+CK2 returned control to William, and unpausing advanced the restored campaign.
+All copied fixture files retained their hashes. The tested workflow uses
+local saves in the profile's `save games` folder. Steam Cloud, multiplayer,
+Ironman, and native Windows gameplay were outside this test. The isolated
+WineD3D test renderer showed terrain shader artifacts during normal play as
+well as after loading.
+
+To upgrade an existing patched installation, build another copy from the
+original Steam game directory. Reuse your existing shared save directory or
+import a copy of your local saves using the instructions below. Point the
+Proton launcher at the new copy once you are ready to switch.
+
+The installer embeds the assembled Windows x64 stubs and requires only Python.
+For changes to `load_save_x64.s`, rebuild them with GNU binutils and verify the
+hook addresses against the symbols from `nm -n`.
+
+```sh
+as --64 -o /tmp/ck2-load-save.o load_save_x64.s
+ld -Ttext 0x140f99202 -e open_load -o /tmp/ck2-load-save.elf /tmp/ck2-load-save.o
+objcopy -O binary -j .text /tmp/ck2-load-save.elf /tmp/ck2-load-save.bin
+nm -n /tmp/ck2-load-save.elf
+```
 
 ## Shared local saves
 
@@ -41,7 +84,7 @@ The importer copies regular `.ck2` files and stops on name collisions. It leaves
 
 ## Achievements
 
-Three edits change seven bytes in the supported executable. They let achievement status checks continue with Ironman off and allow the achievement-specific checksum check to pass. The copied `common/achievements.txt` removes 161 scripted Ironman prerequisites. Gameplay triggers, save checks, and CK2's own Steam reporting remain in place. The stock tooltip may still display the Ironman requirement. A mod that replaces the achievement script can supersede these changes.
+The achievement patch changes seven bytes across three sites in the supported executable. They let achievement status checks continue with Ironman off and allow the achievement-specific checksum check to pass. The copied `common/achievements.txt` removes 161 scripted Ironman prerequisites. Gameplay triggers, save checks, and CK2's own Steam reporting remain in place. The stock tooltip may still display the Ironman requirement. A mod that replaces the achievement script can supersede these changes.
 
 Verify by playing with a real mod and Ironman disabled, saving and reloading, then meeting the ordinary gameplay condition for an achievement the account has yet to unlock. Check that Steam records it after restarting. A menu indicator is a separate observation. This repository does not distribute CK2 binaries or the Steamworks SDK.
 

@@ -8,6 +8,8 @@ import re
 import shutil
 import subprocess
 
+import load_save
+
 EXE_HASH = "a0cc8e92287ac900b0552f5cca20df5acedf4773244923a77b15bcdbe143b13d"
 SCRIPT_HASH = "6c80146d5d9808325cf0e1b5453370de5bd994692488db42014531d0b3997632"
 PATCHES = (
@@ -76,6 +78,12 @@ def main():
         script = Path("common/achievements.txt")
         executable = patch_executable(read_verified(source / exe, EXE_HASH))
         achievements = patch_achievements(read_verified(source / script, SCRIPT_HASH))
+        menu = Path("interface/menubar.gui")
+        menu_data = load_save.patch_menu(read_verified(source / menu, load_save.MENU_HASH))
+        load_save.patch_executable(executable)
+        localisation = Path("localisation/ck2_engine_load_save.csv")
+        if (source / localisation).exists():
+            raise ValueError("The source already contains Engine Patch localisation")
         destination.mkdir()
         try:
             if os.name == "posix" and shutil.which("cp") and os.uname().sysname == "Linux":
@@ -85,7 +93,7 @@ def main():
                 )
             else:
                 shutil.copytree(source, destination, symlinks=True, dirs_exist_ok=True)
-            for relative, data in [(exe, executable), (script, achievements)]:
+            for relative, data in [(exe, executable), (script, achievements), (menu, menu_data)]:
                 target = destination / relative
                 if target.is_symlink() or not target.resolve().is_relative_to(destination):
                     raise ValueError(f"Unexpected symlink at {target}")
@@ -94,6 +102,11 @@ def main():
                     output.write(data)
                 temporary.chmod(target.stat().st_mode & 0o777)
                 temporary.replace(target)
+            text_path = destination / localisation
+            if not text_path.resolve().is_relative_to(destination):
+                raise ValueError(f"Unexpected symlink at {text_path}")
+            with text_path.open("xb") as output:
+                output.write(load_save.LOCALISATION)
             userdir = destination / "userdir.txt"
             userdir.unlink(missing_ok=True)
             profile = destination / "ck2-patch-profile"
