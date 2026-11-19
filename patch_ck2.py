@@ -2,6 +2,7 @@
 """Build a separate experimental CK2 3.3.5.1 installation."""
 import argparse
 import hashlib
+import os
 from pathlib import Path
 import re
 import shutil
@@ -52,20 +53,38 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path, help="Original CK2 game directory")
     parser.add_argument("destination", type=Path, help="New directory outside the original")
+    parser.add_argument(
+        "--shared-saves", type=Path,
+        help="Existing external directory to use for local saves",
+    )
     args = parser.parse_args()
     try:
         source = args.source.resolve(strict=True)
         destination = args.destination.resolve()
         if args.destination.is_symlink() or destination.exists() or source in destination.parents:
             raise ValueError("Destination must be a new directory outside the original")
+        shared_saves = None
+        if args.shared_saves is not None:
+            shared_saves = args.shared_saves.resolve(strict=True)
+            if not shared_saves.is_dir():
+                raise ValueError("Shared saves must be a directory")
+            if shared_saves == source or source in shared_saves.parents:
+                raise ValueError("Choose a shared save directory outside the source installation")
+            if shared_saves in destination.parents:
+                raise ValueError("Choose a destination outside the shared save directory")
         exe = "CK2game.exe"
         script = Path("common/achievements.txt")
         executable = patch_executable(read_verified(source / exe, EXE_HASH))
         achievements = patch_achievements(read_verified(source / script, SCRIPT_HASH))
         destination.mkdir()
         try:
-            # Reflinks fall back to ordinary copies. Avoid hardlinking any game files.
-            subprocess.run(["cp", "-a", "--reflink=auto", "--", f"{source}/.", destination], check=True)
+            if os.name == "posix" and shutil.which("cp") and os.uname().sysname == "Linux":
+                subprocess.run(
+                    ["cp", "-a", "--reflink=auto", "--", f"{source}/.", destination],
+                    check=True,
+                )
+            else:
+                shutil.copytree(source, destination, symlinks=True, dirs_exist_ok=True)
             for relative, data in [(exe, executable), (script, achievements)]:
                 target = destination / relative
                 if target.is_symlink() or not target.resolve().is_relative_to(destination):
@@ -79,6 +98,8 @@ def main():
             userdir.unlink(missing_ok=True)
             profile = destination / "ck2-patch-profile"
             profile.mkdir()
+            if shared_saves is not None:
+                (profile / "save games").symlink_to(shared_saves, target_is_directory=True)
             userdir.write_bytes(b"./ck2-patch-profile/")
         except BaseException:
             shutil.rmtree(destination)

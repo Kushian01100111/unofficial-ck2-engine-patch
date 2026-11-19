@@ -2,4 +2,5 @@
 !/.gitignore
 !/README.md
 !/patch_ck2.py
+!/import_saves.py
 !/launch_ck2.sh
