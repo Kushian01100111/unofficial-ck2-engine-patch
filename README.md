@@ -47,7 +47,7 @@ Verify by playing with a real mod and Ironman disabled, saving and reloading, th
 
 ## Companion project
 
-[Unofficial CK2 Common Patch](https://github.com/LondonHargrove/unofficial-common-patch) handles loose-file bugs, gameplay improvements, and content. Its new repository is a separate publication target.
+[Unofficial CK2 Common Patch](https://github.com/londonhargrove/unofficial-ck2-common-patch) handles loose-file bugs, gameplay improvements, and content. Its new repository is a separate publication target.
 
 ## Credits
 
