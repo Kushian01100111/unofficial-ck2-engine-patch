@@ -1,19 +1,12 @@
 # Unofficial CK2 Engine Patch
 
-Developed by **London Hargrove**. An executable-level patch project for Crusader Kings II. This version adds a pause-menu Load Save action and changes achievement eligibility for a specific Windows x86-64 build of CK2 3.3.5.1. Engine fixes, performance work, and native Linux and macOS support are future work.
+**Developed using AI**
 
-## Platform support
+A Unofficial patch for the game Crusader Kings II. 
 
-| Runtime | Status |
-| --- | --- |
-| Linux with Proton | The supported PE and achievement script were exercised under Proton 10.0-4. An earlier user test reported success on Steam. |
-| Native Windows | The installer can create the same patched PE with standard Python file copying. Native gameplay, Steam launch, and unlock recording still need a Windows test. |
-| Native Linux | Requires a Steam Linux depot build, ELF-specific analysis, and verification with its bundled Steam API. The Windows offsets do not apply. |
-| Native macOS | Inspect the Mach-O executable and its architecture, check OS compatibility and signing, and test its bundled Steam API. Apple Silicon support depends on the game binary and OS compatibility. The Windows offsets do not apply. |
+## Installation Requirements
+Python 3.9+
 
-## Build and run
-
-Requires Python 3.9+ and a matching local Steam installation. The installer checks the SHA-256 hashes of the executable, stock achievement script, and pause-menu layout. It builds an independent copy and fails closed on other builds. Use a new destination outside the Steam installation.
 
 ```sh
 python3 patch_ck2.py "/absolute/path/to/Crusader Kings II" "/absolute/path/to/CK2-patched"
