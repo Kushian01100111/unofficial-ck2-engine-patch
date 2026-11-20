@@ -1,6 +1,6 @@
 # Unofficial CK2 Engine Patch
 
-**Developed using AI**
+> **Note:** Developed with AI assistance. This project does not distribute *Crusader Kings II* binaries or the Steamworks SDK.
 
 A Unofficial patch for the game Crusader Kings II. 
 
