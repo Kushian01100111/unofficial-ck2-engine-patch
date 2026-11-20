@@ -27,6 +27,20 @@ On Linux with Proton, close CK2, save any previous launch options, and set these
 
 On Windows, run the installer with `py -3 patch_ck2.py "C:\path\to\Crusader Kings II" "C:\path\to\CK2-patched"`. For an initial test, open Steam, switch to the copy's directory, and run the copied `CK2game.exe` from there. Confirm CK2 reports Steam active before testing unlocks. Windows launch via the copied executable is a test procedure. Linux's Bash launcher applies only to Proton. To revert, launch the original, restoring prior Steam launch options on Linux.
 
+To launch directly into a specific local save, append CK2's stock startup
+arguments after `%command%`. Use the filename from the patched profile's
+`save games` directory. Omit the arguments to open the launcher and manage
+mods or DLC.
+
+```text
+"/absolute/path/to/launch_ck2.sh" "/absolute/path/to/CK2-patched" %command% -skiplauncher "-start_save=My Save.ck2"
+```
+
+In one matched offline Proton run on the same local save, the game handed
+control to the player after 29.8 seconds with Launcher Continue and 19.7
+seconds with direct startup. This option applies to launching CK2. A faster
+in-game save load has yet to be verified.
+
 ## Load Save from the pause menu
 
 **Load Save** appears directly below **Save Game** in the pause menu. It opens
@@ -37,10 +51,16 @@ to the filename field. Delete and tab actions are disabled while loading.
 
 The earlier implementation called the main-menu **Load Game** action after
 campaign teardown. That action opened a browser and expected a player to
-finish character setup. The patch now hands the selected filename to CK2's
+finish character setup. The patch now hands the selected path, relative to the local save directory, to CK2's
 stock startup-save loader at the end of engine initialization. On a successful
 load, the picker is followed by CK2's loading screen and then gameplay. CK2
 still validates and deserializes the file and restores the saved player.
+
+The **Loading game** stage reuses CK2's framed loading artwork, progress bar,
+and localized gameplay tips. During a pause-menu load, the SDL music channel
+keeps its current playback position and the frontend skips restarting the
+title theme. An offline Proton test matched the same track to consecutive
+positions in the original audio before, during, and after loading.
 
 In an offline single-player Proton 10.0-4 test, a compressed save created on
 27 September 1066 was reloaded after advancing to 6 October. CK2 restored the
@@ -48,6 +68,10 @@ saved date, Duke William of Normandy, the map, and the saved resource totals.
 The recorded transition showed no main menu or character selection screen.
 A second test loaded an uncompressed save while playing as a different ruler.
 CK2 returned control to William, and unpausing advanced the restored campaign.
+A separate Proton test used Launcher Continue with a save two folders deep,
+then switched between that save and a root-level save using pause-menu
+**Load Save**. Both returned to gameplay on their saved dates. The picker
+kept its **Load** caption when moving into a folder and back to its parent.
 All copied fixture files retained their hashes. The tested workflow uses
 local saves in the profile's `save games` folder. Steam Cloud, multiplayer,
 Ironman, and native Windows gameplay were outside this test. The isolated
@@ -84,7 +108,7 @@ The importer copies regular `.ck2` files and stops on name collisions. It leaves
 
 ## Achievements
 
-The achievement patch changes seven bytes across three sites in the supported executable. They let achievement status checks continue with Ironman off and allow the achievement-specific checksum check to pass. The copied `common/achievements.txt` removes 161 scripted Ironman prerequisites. Gameplay triggers, save checks, and CK2's own Steam reporting remain in place. The stock tooltip may still display the Ironman requirement. A mod that replaces the achievement script can supersede these changes.
+The achievement eligibility changes touch seven bytes across three sites in the supported executable. They let achievement status checks continue with Ironman off and allow the achievement-specific checksum check to pass. The copied `common/achievements.txt` removes 161 scripted Ironman prerequisites. Gameplay triggers, save checks, and CK2's own Steam reporting remain in place. The Game Rules achievement tooltip uses the same current eligibility callback as its status label and omits the Ironman requirement. A mod that replaces the achievement script can supersede these changes.
 
 Verify by playing with a real mod and Ironman disabled, saving and reloading, then meeting the ordinary gameplay condition for an achievement the account has yet to unlock. Check that Steam records it after restarting. A menu indicator is a separate observation. This repository does not distribute CK2 binaries or the Steamworks SDK.
 

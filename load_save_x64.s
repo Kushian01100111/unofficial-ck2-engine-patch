@@ -4,6 +4,7 @@
 .set load_pending, open_load + (0x14185bd75 - 0x140f99202)
 .set chosen_length, open_load + (0x14185bd78 - 0x140f99202)
 .set chosen_name, open_load + (0x14185bd80 - 0x140f99202)
+.set chosen_path, open_load + (0x14185be80 - 0x140f99202)
 .set start_save, open_load + (0x141771b68 - 0x140f99202)
 .set stock_start_save, open_load + (0x140711c20 - 0x140f99202)
 .set frontend_return, open_load + (0x14070fe4e - 0x140f99202)
@@ -22,9 +23,22 @@
 .set stock_cleanup, open_load + (0x140681f13 - 0x140f99202)
 .set stock_submit_continue, open_load + (0x14068194c - 0x140f99202)
 
+.set tip_deadline, open_load + (0x141666ce0 - 0x140f99202)
+.set tip_generate, open_load + (0x1408096a3 - 0x140f99202)
+.set tip_continue, open_load + (0x14080974f - 0x140f99202)
+.set sound_manager, open_load + (0x140c50010 - 0x140f99202)
+.set title_music_continue, open_load + (0x14070f970 - 0x140f99202)
+.set title_music_skip, open_load + (0x14070fac7 - 0x140f99202)
+.set reload_active, open_load + (0x14185bd76 - 0x140f99202)
+
+.set stock_progress_with_tips, open_load + (0x1408095d0 - 0x140f99202)
+
+
+.set stock_stop_music_continue, open_load + (0x140c85c57 - 0x140f99202)
+
 .intel_syntax noprefix
 .global open_load, open_save, close_picker, capture_save, submit_picker, resume_save
-.global delete_save, cloud_tab, local_tab, update_caption
+.global delete_save, cloud_tab, local_tab, update_caption, open_picker
 # The former Export button reuses the stock local Save Game panel.
 open_load:
     mov byte ptr [rip + picker_mode], 1
@@ -86,6 +100,9 @@ submit_picker:
     jne stock_submit
     cmp qword ptr [rip + chosen_length], 0
     je submit_done
+    call compose_path
+    test eax, eax
+    je submit_done
     mov byte ptr [rip + picker_mode], 0
     mov byte ptr [rip + load_pending], 1
     mov rcx, r13
@@ -106,10 +123,10 @@ resume_save:
     mov r8, [rip + chosen_length]
     and qword ptr [rip + chosen_length], 0
     lea rcx, [rip + start_save]
-    lea rdx, [rip + chosen_name]
+    lea rdx, [rip + chosen_path]
     call assign_string
     mov rcx, r14
-    call stock_start_save
+    call load_campaign
 resume_done:
     lea r11, [rsp + 0x250]
     jmp frontend_return
@@ -170,5 +187,123 @@ caption_done:
     mov rcx, [r12 + 0x6618]
     jmp caption_continue
 
+# Reuse the unreachable body of the former Export Game handler.
+.section .loadpath, "ax"
+compose_path:
+    # Preserve the selected folder chain before the campaign is torn down.
+    lea r10, [rip + chosen_path]
+    mov r9, [r13 + 0x6960]
+    xor r8d, r8d
+folder_next:
+    test r9, r9
+    je copy_basename
+    mov r11, [r9 + 0x10]
+    mov rdx, r9
+    cmp qword ptr [r9 + 0x18], 16
+    cmovae rdx, [r9]
+    xor eax, eax
+folder_byte:
+    cmp rax, r11
+    jae folder_end
+    mov cl, [rdx + rax]
+    inc eax
+    cmp cl, 92
+    jne folder_slash
+    mov cl, '/'
+folder_slash:
+    cmp cl, '/'
+    jne folder_write
+    test r8d, r8d
+    je folder_byte
+    cmp byte ptr [r10 + r8 - 1], '/'
+    je folder_byte
+folder_write:
+    cmp r8d, 255
+    jae path_rejected
+    mov [r10 + r8], cl
+    inc r8d
+    jmp folder_byte
+folder_end:
+    test r8d, r8d
+    je folder_advance
+    cmp byte ptr [r10 + r8 - 1], '/'
+    je folder_advance
+    cmp r8d, 255
+    jae path_rejected
+    mov byte ptr [r10 + r8], '/'
+    inc r8d
+folder_advance:
+    mov r9, [r9 + 0x28]
+    jmp folder_next
+copy_basename:
+    mov r11, [rip + chosen_length]
+    lea rax, [r8 + r11]
+    cmp rax, 255
+    ja path_rejected
+    lea rdx, [rip + chosen_name]
+    xor eax, eax
+basename_byte:
+    mov cl, [rdx + rax]
+    mov [r10 + r8], cl
+    inc r8d
+    inc eax
+    cmp rax, r11
+    jb basename_byte
+    mov byte ptr [r10 + r8], 0
+    mov [rip + chosen_length], r8
+    mov byte ptr [rip + reload_active], 1
+    and qword ptr [rip + tip_deadline], 0
+    mov eax, 1
+    ret
+path_rejected:
+    xor eax, eax
+    ret
+
 save_caption:
     .asciz "MENU_BAR_SAVE"
+
+
+.global loading_tips, preserve_music
+# Refresh the tip on the first load update and keep its panel active.
+loading_tips:
+    cmp byte ptr [rip + reload_active], 1
+    jne check_tip_deadline
+    mov r15b, 1
+check_tip_deadline:
+    comisd xmm0, qword ptr [rip + tip_deadline]
+    jbe tip_continue
+    jmp tip_generate
+
+# A pause-menu load traverses frontend initialization. Keep the campaign
+# soundtrack rather than starting the title theme at that point.
+preserve_music:
+    cmp byte ptr [rip + reload_active], 1
+    je title_music_skip
+    call sound_manager
+    jmp title_music_continue
+
+load_campaign:
+    sub rsp, 0x28
+    call stock_start_save
+    mov byte ptr [rip + reload_active], 0
+    add rsp, 0x28
+    ret
+
+
+.global present_campaign_stage, keep_track
+# Preserve the localized Loading game label and enable the startup tip panel.
+present_campaign_stage:
+    mov rdx, rcx
+    mov rcx, [r12 + 0x57e0]
+    mov r8b, 1
+    jmp stock_progress_with_tips
+
+# Keep the current SDL music object and playback position during reload.
+keep_track:
+    cmp byte ptr [rip + reload_active], 1
+    jne stock_stop_music
+    ret
+stock_stop_music:
+    sub rsp, 0x28
+    mov rax, [rcx]
+    jmp stock_stop_music_continue
