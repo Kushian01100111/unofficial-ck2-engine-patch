@@ -4,6 +4,9 @@
 .set load_pending, open_load + (0x14185bd75 - 0x140f99202)
 .set chosen_length, open_load + (0x14185bd78 - 0x140f99202)
 .set chosen_name, open_load + (0x14185bd80 - 0x140f99202)
+.set cue_deadline, open_load + (0x14185bf80 - 0x140f99202)
+.set sdl_get_ticks, open_load + (0x140f9a598 - 0x140f99202)
+.set campaign_update_continue, open_load + (0x140653754 - 0x140f99202)
 .set chosen_path, open_load + (0x14185be80 - 0x140f99202)
 .set start_save, open_load + (0x141771b68 - 0x140f99202)
 .set stock_start_save, open_load + (0x140711c20 - 0x140f99202)
@@ -29,6 +32,7 @@
 .set title_music_skip, open_load + (0x14070fac7 - 0x140f99202)
 .set reload_active, open_load + (0x14185bd76 - 0x140f99202)
 
+.set stock_campaign_progress, open_load + (0x14080b0d0 - 0x140f99202)
 .set stock_progress_with_tips, open_load + (0x1408095d0 - 0x140f99202)
 
 
@@ -42,6 +46,10 @@
 .set render_stock_frame, open_load + (0x140631b28 - 0x140f99202)
 .set skip_stock_art, open_load + (0x140631d02 - 0x140f99202)
 .set finish_frame, open_load + (0x140631d69 - 0x140f99202)
+
+.set load_committed, 1
+.set load_queued, 2
+.set click_lead_ms, 186
 
 .intel_syntax noprefix
 .global open_load, open_save, close_picker, capture_save, submit_picker, resume_save
@@ -59,16 +67,13 @@ open_picker:
     jmp open_picker_continue
 
 close_picker:
-    mov byte ptr [rip + picker_mode], 0
-    mov rax, rsp
-    push rdi
-    sub rsp, 0x70
-    jmp close_picker_continue
+    jmp close_or_cancel
 
 # Record the stock row name before the save UI copies it into the editable field.
 # Keep the original SetString arguments and only accept a local filename.
 capture_save:
-    cmp byte ptr [rip + picker_mode], 1
+    # The adjacent load_pending byte must be zero to accept another row.
+    cmp word ptr [rip + picker_mode], 1
     jne capture_done
     and qword ptr [rip + chosen_length], 0
     test r8, r8
@@ -105,14 +110,14 @@ capture_done:
 submit_picker:
     cmp byte ptr [rip + picker_mode], 1
     jne stock_submit
+    cmp byte ptr [rip + load_pending], load_queued
+    je submit_done
     cmp qword ptr [rip + chosen_length], 0
     je submit_done
     call compose_path
     test eax, eax
     je submit_done
-    mov byte ptr [rip + picker_mode], 0
-    mov byte ptr [rip + load_pending], 1
-    call begin_campaign_reload
+    call queue_campaign_reload
 submit_done:
     jmp stock_cleanup
 stock_submit:
@@ -123,7 +128,7 @@ stock_submit:
 # At the end of frontend initialization, consume the same one-shot name as
 # the startup loader. This avoids opening the main menu Load Game browser.
 resume_save:
-    cmp byte ptr [rip + load_pending], 1
+    cmp byte ptr [rip + load_pending], load_committed
     jne resume_done
     mov byte ptr [rip + load_pending], 0
     mov r8, [rip + chosen_length]
@@ -257,8 +262,6 @@ basename_byte:
     jb basename_byte
     mov byte ptr [r10 + r8], 0
     mov [rip + chosen_length], r8
-    mov byte ptr [rip + reload_active], 1
-    and qword ptr [rip + tip_deadline], 0
     mov eax, r8d
     ret
 path_rejected:
@@ -287,8 +290,11 @@ load_campaign:
 
 
 .global present_campaign_stage, keep_track
-# Preserve the localized Loading game label and enable the startup tip panel.
+# Keep the stock Start Game presentation. Use the tip panel only when
+# the player is replacing an active campaign through Load Save.
 present_campaign_stage:
+    cmp byte ptr [rip + reload_active], 1
+    jne stock_campaign_progress
     mov rdx, rcx
     mov rcx, [r12 + 0x57e0]
     mov r8b, 1
@@ -321,6 +327,8 @@ wait_for_loading_window:
 # exists. This stock draw presents the frame before teardown can block.
 begin_campaign_reload:
     sub rsp, 0x68
+    mov [rsp + 0x50], r13
+    mov r13, rcx
     # Park the renderer's campaign children while the temporary loading
     # window creates and draws its own tree. Preserve the list head and tail.
     mov rcx, [r13 + 0x57e0]
@@ -351,5 +359,48 @@ begin_campaign_reload:
     mov rax, [rsp + 0x48]
     mov [rcx + 0x3c8], rax
     mov rcx, r13
+    mov r13, [rsp + 0x50]
     add rsp, 0x68
     jmp quit_to_menu
+
+close_or_cancel:
+    cmp byte ptr [rip + load_pending], load_queued
+    jne close_stock_picker
+    mov byte ptr [rip + load_pending], 0
+close_stock_picker:
+    mov byte ptr [rip + picker_mode], 0
+    mov rax, rsp
+    push rdi
+    sub rsp, 0x70
+    jmp close_picker_continue
+
+# Commit the selected path now. Let the normal UI dispatch and SDL mixer
+# play the button cue while the campaign event loop stays responsive.
+queue_campaign_reload:
+    sub rsp, 0x28
+    call qword ptr [rip + sdl_get_ticks]
+    # CK2 requests 4096 frames at 44.1 kHz. Allow two mixer periods.
+    add eax, click_lead_ms
+    mov [rip + cue_deadline], eax
+    mov byte ptr [rip + load_pending], load_queued
+    add rsp, 0x28
+    ret
+
+.global advance_campaign_reload
+# This campaign update boundary precedes the stock teardown check. A
+# signed subtraction keeps the deadline comparison safe across tick wrap.
+advance_campaign_reload:
+    cmp byte ptr [rip + load_pending], load_queued
+    jne check_stock_teardown
+    call qword ptr [rip + sdl_get_ticks]
+    sub eax, [rip + cue_deadline]
+    js check_stock_teardown
+    mov byte ptr [rip + picker_mode], 0
+    mov byte ptr [rip + load_pending], load_committed
+    mov byte ptr [rip + reload_active], 1
+    and qword ptr [rip + tip_deadline], 0
+    mov rcx, r12
+    call begin_campaign_reload
+check_stock_teardown:
+    cmp byte ptr [r12 + 0x6611], 0
+    jmp campaign_update_continue
