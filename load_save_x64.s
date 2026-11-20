@@ -24,8 +24,6 @@
 .set stock_submit_continue, open_load + (0x14068194c - 0x140f99202)
 
 .set tip_deadline, open_load + (0x141666ce0 - 0x140f99202)
-.set tip_generate, open_load + (0x1408096a3 - 0x140f99202)
-.set tip_continue, open_load + (0x14080974f - 0x140f99202)
 .set sound_manager, open_load + (0x140c50010 - 0x140f99202)
 .set title_music_continue, open_load + (0x14070f970 - 0x140f99202)
 .set title_music_skip, open_load + (0x14070fac7 - 0x140f99202)
@@ -35,6 +33,15 @@
 
 
 .set stock_stop_music_continue, open_load + (0x140c85c57 - 0x140f99202)
+
+.set destroy_loading_window, open_load + (0x140809b50 - 0x140f99202)
+.set init_loading_window, open_load + (0x140809a00 - 0x140f99202)
+.set loading_game_key, open_load + (0x14105d618 - 0x140f99202)
+
+.set loading_window, open_load + (0x141666ce8 - 0x140f99202)
+.set render_stock_frame, open_load + (0x140631b28 - 0x140f99202)
+.set skip_stock_art, open_load + (0x140631d02 - 0x140f99202)
+.set finish_frame, open_load + (0x140631d69 - 0x140f99202)
 
 .intel_syntax noprefix
 .global open_load, open_save, close_picker, capture_save, submit_picker, resume_save
@@ -105,8 +112,7 @@ submit_picker:
     je submit_done
     mov byte ptr [rip + picker_mode], 0
     mov byte ptr [rip + load_pending], 1
-    mov rcx, r13
-    call quit_to_menu
+    call begin_campaign_reload
 submit_done:
     jmp stock_cleanup
 stock_submit:
@@ -218,7 +224,7 @@ folder_slash:
     cmp byte ptr [r10 + r8 - 1], '/'
     je folder_byte
 folder_write:
-    cmp r8d, 255
+    cmp r8b, 255
     jae path_rejected
     mov [r10 + r8], cl
     inc r8d
@@ -228,7 +234,7 @@ folder_end:
     je folder_advance
     cmp byte ptr [r10 + r8 - 1], '/'
     je folder_advance
-    cmp r8d, 255
+    cmp r8b, 255
     jae path_rejected
     mov byte ptr [r10 + r8], '/'
     inc r8d
@@ -253,7 +259,7 @@ basename_byte:
     mov [rip + chosen_length], r8
     mov byte ptr [rip + reload_active], 1
     and qword ptr [rip + tip_deadline], 0
-    mov eax, 1
+    mov eax, r8d
     ret
 path_rejected:
     xor eax, eax
@@ -263,17 +269,7 @@ save_caption:
     .asciz "MENU_BAR_SAVE"
 
 
-.global loading_tips, preserve_music
-# Refresh the tip on the first load update and keep its panel active.
-loading_tips:
-    cmp byte ptr [rip + reload_active], 1
-    jne check_tip_deadline
-    mov r15b, 1
-check_tip_deadline:
-    comisd xmm0, qword ptr [rip + tip_deadline]
-    jbe tip_continue
-    jmp tip_generate
-
+.global preserve_music
 # A pause-menu load traverses frontend initialization. Keep the campaign
 # soundtrack rather than starting the title theme at that point.
 preserve_music:
@@ -307,3 +303,53 @@ stock_stop_music:
     sub rsp, 0x28
     mov rax, [rcx]
     jmp stock_stop_music_continue
+
+.global wait_for_loading_window
+# While CK2 rebuilds the loading window, retain the complete frame.
+wait_for_loading_window:
+    test dil, dil
+    je skip_stock_art
+    cmp byte ptr [rip + reload_active], 1
+    jne render_stock_frame
+    cmp qword ptr [rip + loading_window], 0
+    je finish_frame
+    jmp render_stock_frame
+
+# The export availability block is skipped by the branch at 0x14068DC40.
+.section .earlyload, "ax"
+# Present the full native loading window while the campaign's GUI still
+# exists. This stock draw presents the frame before teardown can block.
+begin_campaign_reload:
+    sub rsp, 0x68
+    # Park the renderer's campaign children while the temporary loading
+    # window creates and draws its own tree. Preserve the list head and tail.
+    mov rcx, [r13 + 0x57e0]
+    mov rax, [rcx + 0x3c0]
+    mov [rsp + 0x40], rax
+    mov rax, [rcx + 0x3c8]
+    mov [rsp + 0x48], rax
+    and qword ptr [rcx + 0x3c0], 0
+    and qword ptr [rcx + 0x3c8], 0
+    mov rdx, [r13 + 0x310]
+    mov r8b, 1
+    call init_loading_window
+    lea rcx, [rsp + 0x20]
+    lea rdx, [rip + loading_game_key]
+    call localize
+    mov rdx, rax
+    mov rcx, [r13 + 0x57e0]
+    mov r8b, 1
+    call stock_progress_with_tips
+    lea rcx, [rsp + 0x20]
+    call free_string
+    # The current GUI owns this temporary window. Let the stock loader create
+    # its own window after switching GUI owners. The presented frame stays up.
+    call destroy_loading_window
+    mov rcx, [r13 + 0x57e0]
+    mov rax, [rsp + 0x40]
+    mov [rcx + 0x3c0], rax
+    mov rax, [rsp + 0x48]
+    mov [rcx + 0x3c8], rax
+    mov rcx, r13
+    add rsp, 0x68
+    jmp quit_to_menu

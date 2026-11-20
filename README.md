@@ -61,6 +61,12 @@ and localized gameplay tips. During a pause-menu load, the SDL music channel
 keeps its current playback position and the frontend skips restarting the
 title theme. An offline Proton test matched the same track to consecutive
 positions in the original audio before, during, and after loading.
+**Load Save** and the picker confirmation use the same click cue as **Save
+Game** and **Game Options**. On confirmation, the patch presents a native
+loading frame before the campaign teardown call. The renderer temporarily draws
+only the loading window's tree, keeping the outgoing ruler portrait, army
+markers, and minimap off the artwork. The patch releases the temporary window
+and restores the campaign render list before the stock loader takes over.
 
 In an offline single-player Proton 10.0-4 test, a compressed save created on
 27 September 1066 was reloaded after advancing to 6 October. CK2 restored the
