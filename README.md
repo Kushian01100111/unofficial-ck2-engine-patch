@@ -12,6 +12,7 @@ This patch adds several useful features:
 
 - **Load saves while playing:** Load another save without returning to the main menu.
 - **Achievements with mods:** Earn Steam achievements while using mods or playing without Ironman Mode.
+- **Experimental multiplayer options:** Share achievement eligibility across Steam accounts and transfer saves in larger blocks.
 
 More features may be added in the future.
 
@@ -193,6 +194,20 @@ If two files have the same name, the tool stops rather than overwriting one.
 - On Windows, shared folders using symbolic links may require Developer Mode or special permissions.
 - Mods that change the location of CK2's user files may require additional setup.
 
+### 4. Experimental Multiplayer Options
+
+Use either flag when creating a new patched copy of CK2 3.3.5.1. This example enables both.
+
+```powershell
+py -3 patch_ck2.py "C:\path\to\Crusader Kings II" "C:\path\to\CK2-patched-MP" --mp-achievements --fast-mp-downloads
+```
+
+- **`--mp-achievements`** lets copies with the option enabled verify eligible saves written in multiplayer by another Steam account. Enable it on the host and on each player who wants to earn achievements. Start with a new campaign or have the original Steam account load and re-save an eligible campaign in multiplayer. CK2 still evaluates the achievement goals, Steam availability and game rules.
+- **`--fast-mp-downloads`** increases the sending block size for save transfers from 32 KiB to 44 KiB. Enable this on the host. Large saves need about 27% fewer blocks. Transfer time depends on the connection and the time CK2 takes to prepare and load the save.
+- **`--mp-download-chunk-kib 128`** or **`--mp-download-chunk-kib 256`** selects a larger block size on the host. These presets also encode Base64 one field at a time using CK2's existing transfer format. Use one transfer option per build.
+
+To verify the options in a private lobby, complete an unearned achievement with a guest and check their Steam profile. Then time the transfer of the same save with and without `--fast-mp-downloads`, using the same host and guest. Live multiplayer verification is pending.
+
 ---
 
 ## Technical Details (For Advanced Users)
@@ -209,11 +224,15 @@ This allows the game to load another campaign without using the normal main-menu
 
 **Achievement Changes**
 
-The patch changes 7 bytes across 3 locations in the supported CK2 executable.
+The patch adjusts the checksum and achievement status checks in the supported CK2 executable.
 
 It also removes 161 Ironman requirements from the copied `common/achievements.txt` file and updates the Game Rules achievement checks.
 
 The normal achievement conditions and Steam reporting system are left in place.
+
+**Multiplayer Assembly Sources**
+
+`multiplayer_x64.s` contains the achievement eligibility code. `mp_transfer_x64.s` contains the optimized encoder for the larger transfer blocks. The patcher embeds the assembled bytes, so Python is sufficient to install the patch.
 
 **Compatibility**
 

@@ -4,5 +4,7 @@
 !/patch_ck2.py
 !/load_save.py
 !/load_save_x64.s
+!/multiplayer_x64.s
+!/mp_transfer_x64.s
 !/import_saves.py
 !/launch_ck2.sh
